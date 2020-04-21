@@ -151,9 +151,7 @@ struct GraphTask {
         reentrant_depth_(reentrant_depth),
         exit_on_error_(exit_on_error),
         cpu_ready_queue_(std::move(cpu_ready_queue)),
-        future_result_(std::make_shared<FutureVariableList>()) {
-          TORCH_INTERNAL_ASSERT(cpu_ready_queue_ != nullptr);
-        }
+        future_result_(std::make_shared<FutureVariableList>()) {}
 };
 
 struct NodeTask {
@@ -243,34 +241,42 @@ struct TORCH_API Engine {
 
   // Given a pre-populated GraphTask and GraphRoot, computes the backward pass
   // for the graph.
-  // The async_mode is a mode where we run the graph_task in an async way.
-  // when async_mode=True, we will launch execute_graph_task_with_continuation in
-  // a separate thread and return the graph_task->future_results_ immediately.
-  // execute_graph_task_with_continuation will execute the graph task from its
-  // associated ready_queue until the queue is empty, and re-launch it to the end
-  // of thread pool tasks' queue, this is so that we don't block the computation
-  // and IO, which is used by the Distributed Autograd Engine.
   //
   // NB: This API should only be used by internal autograd specific
   // machinery and shouldn't be exposed to users in anyway.
   virtual std::shared_ptr<FutureVariableList> execute_with_graph_task(
       const std::shared_ptr<GraphTask>& graph_task,
-      std::shared_ptr<Node> graph_root,
-      bool async_mode = false);
+      std::shared_ptr<Node> graph_root);
 
-  // Enqueues a blocked task for execution on the CPU thread. A blocked task is
-  // basically a task that isn't triggered automatically to be
-  // 'ready to execute' by the autograd engine. This task needs to be unblocked
-  // for execution via an external mechanism. This method assumes that
-  // the appropriate GraphTask has already been initialized appropriately.
-  // Another important part is that this does not increment 'outstanding_tasks_'
-  // in the appropriate GraphTask. It is assumed we've already done this before
-  // hand for this task (to ensure we block for its execution). This is useful
-  // in the distributed autograd case where we need to increment
-  // 'outstanding_tasks_' first to indicate the local autograd engine needs to
-  // wait for this task, but the task might actually be received later over the
-  // network for execution.
-  void enqueue_blocked_task_on_cpu(NodeTask task);
+  // Given a pre-populated GraphTask and a root node, compute the backward pass
+  // for the autograd graph until the graph task ready queue is empty.
+  //
+  // This method is being used in the Distributed Autograd Engine, it assumes that
+  // the appropriate GraphTask has already been initialized appropriately. It will
+  // construct a local ready queue to traverse the GraphTask instead of using the
+  // GraphTask embedded cpu_ready_queue, this is because dist engine might run the
+  // same GraphTask from different SendFunctions concurrently in different threads.
+  // The method will only mark the GraphTask as completed when it needes to, which
+  // means it might not mark as completed for every call as dist engine would like
+  // to keep the GraphTask alive when it not receives all gradients.
+  //
+  // When `incrementOutstandingTasks=false`, the function does not increment 
+  // 'outstanding_tasks_' in the appropriate GraphTask. It is assumed we've already
+  // done this before hand for this task (to ensure we don't pre-mark this graph_task
+  // as completed). This is useful in the distributed autograd case where we need to
+  // increment 'outstanding_tasks_' first to indicate the local autograd engine the
+  // graph task is not completed until it receives the signals from other workers
+  // over the network.
+  //
+  // XXX: calling this function assumes that we will have NO GPU nodetasks be executed
+  // for the graph_task, the caller of this function need to ensure this otherwise
+  // there will be non deterministic behaviors. A correct way to fix this is to
+  // re-design the autograd engine so that GPU worker thread to behave the same as CPU
+  // caller thread, record the operation/thread for the device, and reuse it in backward.
+ std::shared_ptr<FutureVariableList> execute_graph_task_until_ready_queue_empty(
+     const std::shared_ptr<GraphTask>& graph_task,
+     std::shared_ptr<Node> root_to_execute,
+     bool incrementOutstandingTasks=true);
 
   virtual std::unique_ptr<AnomalyMetadata> make_anomaly_metadata() {
     return nullptr;
@@ -288,10 +294,14 @@ struct TORCH_API Engine {
  protected:
   Engine();
   void compute_dependencies(Node* root, GraphTask& task);
+
+  // We pass cpu_ready_queue to evaluate_function, so that it knows
+  // the correct ready queue to push to after a NodeTask is ready
   void evaluate_function(
       std::shared_ptr<GraphTask>& graph_task,
       Node* func,
-      InputBuffer& inputs);
+      InputBuffer& inputs,
+      const std::shared_ptr<ReadyQueue>& cpu_ready_queue);
 
   // initialize the thread local ready queue with the ready queue that is created
   // elsewhere (i.e. thread_init, Engine::execute, etc), or create a new
@@ -299,10 +309,10 @@ struct TORCH_API Engine {
   void init_local_ready_queue(std::shared_ptr<ReadyQueue> ready_queue = nullptr);
 
   std::shared_ptr<ReadyQueue> ready_queue(
-      const std::shared_ptr<GraphTask>& graph_task,
+      std::shared_ptr<ReadyQueue> cpu_ready_queue,
       at::Device device);
   std::shared_ptr<ReadyQueue> ready_queue_by_index(
-      const std::shared_ptr<GraphTask>& graph_task,
+      std::shared_ptr<ReadyQueue> cpu_ready_queue,
       int device_index);
   // start device threads (CUDA, XLA, etc.) in Engine,
   // note that it does NOT start CPU thread.
@@ -362,8 +372,6 @@ private:
   std::condition_variable non_reentrant_device_thread_finish_;
   std::mutex non_reentrant_device_thread_finish_mutex_;
 
- void execute_graph_task_with_continuation(
-     const std::shared_ptr<GraphTask>& graph_task);
  void graph_task_exec_post_processing(
      const std::shared_ptr<GraphTask>& graph_task);
  void mark_graph_task_completed(const std::shared_ptr<GraphTask>& graph_task);
