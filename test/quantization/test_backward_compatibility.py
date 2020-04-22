@@ -14,11 +14,9 @@ import torch.nn.intrinsic.quantized as nniq
 from torch.testing._internal.common_utils import TestCase
 from torch.testing._internal.common_utils import run_tests
 
-# TODO: remove this global setting
-# JIT tests use double as the default dtype
-torch.set_default_dtype(torch.double)
-
 class TestSerialization(TestCase):
+    """ Test backward compatiblity for serialization and numerics
+    """
     # Copy and modified from TestCase.assertExpected
     def _test_op(self, qmodule, subname=None, input_size=None, input_quantized=True, generate=False, prec=None):
         r""" Test quantized modules serialized previously can be loaded

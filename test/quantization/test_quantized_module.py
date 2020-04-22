@@ -81,7 +81,7 @@ def _make_conv_test_input(
     return (X, X_q, W, W_q, b if use_bias else None)
 
 
-class FunctionalAPITest(QuantizationTestCase):
+class TestFunctional(QuantizationTestCase):
     def test_relu_api(self):
         X = torch.arange(-5, 5, dtype=torch.float)
         scale = 2.0
@@ -237,7 +237,7 @@ class FunctionalAPITest(QuantizationTestCase):
                 use_channelwise)
 
 
-class DynamicModuleAPITest(QuantizationTestCase):
+class TestDynamicQuantizedModule(QuantizationTestCase):
     @unittest.skipUnless('fbgemm' in torch.backends.quantized.supported_engines,
                          " Quantized operations require FBGEMM. FBGEMM is only optimized for CPUs"
                          " with instruction set support avx2 or newer.")
@@ -336,7 +336,7 @@ class DynamicModuleAPITest(QuantizationTestCase):
         self.assertTrue('QuantizedLinear' in str(quantized_float_linear))
 
 
-class ModuleAPITest(QuantizationTestCase):
+class TestStaticQuantizedModule(QuantizationTestCase):
     def test_relu(self):
         relu_module = nnq.ReLU()
         relu6_module = nnq.ReLU6()
@@ -865,7 +865,7 @@ class ModuleAPITest(QuantizationTestCase):
         qX = torch.quantize_per_tensor(X, x_scale, x_zero_point, dtype=torch.quint8)
         dqX = qX.dequantize()
 
-        float_mod = torch.nn.LayerNorm(dqX.size()[1:])
+        float_mod = torch.nn.LayerNorm(dqX.size()[1:]).float()
         float_mod.weight = torch.nn.Parameter(torch.rand(*dims[1:]))
         float_mod.bias = torch.nn.Parameter(torch.rand(*dims[1:]))
 
