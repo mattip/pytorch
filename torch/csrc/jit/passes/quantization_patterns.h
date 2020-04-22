@@ -42,6 +42,7 @@ graph(%a_quant, %packed_params, %r_scale, %r_zero_point, %r_dtype, %stride, %pad
         %r_quant = aten::quantize_per_tensor(%r, %r_scale, %r_zero_point, %r_dtype)
         return (%r_quant) )";
 
+  // aten::conv2d - aten::relu_
   std::string conv2d_inplace_relu = R"(
 graph(%a_quant, %packed_params, %r_scale, %r_zero_point, %r_dtype, %stride, %padding, %dilation, %groups):
         %a_dequant = aten::dequantize(%a_quant)
@@ -55,12 +56,12 @@ graph(%a_quant, %packed_params, %r_scale, %r_zero_point, %r_dtype, %stride, %pad
   // quantized::conv2d
   std::string quantized_conv2d = R"(
 graph(%a_quant, %packed_params, %r_scale, %r_zero_point, %r_dtype, %stride, %padding, %dilation, %groups):
-        %r_quant = quantized::conv2d(%a_quant, %packed_params, %stride, %padding, %dilation, %groups, %r_scale, %r_zero_point)
+        %r_quant = quantized::conv2d(%a_quant, %packed_params, %r_scale, %r_zero_point)
         return (%r_quant) )";
 
   std::string quantized_conv2d_relu = R"(
 graph(%a_quant, %packed_params, %r_scale, %r_zero_point, %r_dtype, %stride, %padding, %dilation, %groups):
-        %r_quant = quantized::conv2d_relu(%a_quant, %packed_params, %stride, %padding, %dilation, %groups, %r_scale, %r_zero_point)
+        %r_quant = quantized::conv2d_relu(%a_quant, %packed_params, %r_scale, %r_zero_point)
         return (%r_quant) )";
 
   // aten::conv3d
@@ -96,7 +97,7 @@ graph(%a_quant, %packed_params, %r_scale, %r_zero_point, %r_dtype, %stride, %pad
   // quantized::conv3d
   std::string quantized_conv3d = R"(
 graph(%a_quant, %packed_params, %r_scale, %r_zero_point, %r_dtype, %stride, %padding, %dilation, %groups):
-        %r_quant = quantized::conv3d(%a_quant, %packed_params, %stride, %padding, %dilation, %groups, %r_scale, %r_zero_point)
+        %r_quant = quantized::conv3d(%a_quant, %packed_params, %r_scale, %r_zero_point)
         return (%r_quant) )";
 
   std::string quantized_conv3d_relu = R"(
